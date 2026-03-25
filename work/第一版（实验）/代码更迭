@@ -1,0 +1,8 @@
+模块，推荐技术,理由,硬件需求
+听 (Input),SpeechRecognition,Python最经典的语音库，自带“检测静音自动停止录音”功能，省去自己写 VAD 算法的麻烦。,-
+识 (ASR),Faster-Whisper,OpenAI Whisper 的加速版。比原版快得多，安装极简。选用 base 或 small 模型。,显存 < 1G (或纯CPU)
+译 (MT),Helsinki-NLP,基于 HuggingFace Transformers。模型文件极小（约300MB），专为离线翻译设计，速度极快。,内存 < 500MB
+说 (TTS),pyttsx3,调用操作系统的本地语音引擎（Windows/Mac/Linux自带）。零依赖、零延迟、完全离线，虽然声音机械，但绝对能跑。,-
+
+
+实际测验，过低精度，检测受环境影响过大，无法自动停止检测

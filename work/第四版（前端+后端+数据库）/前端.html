@@ -1,0 +1,256 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>智能语音系统 - 登录</title>
+    <style>
+        body { font-family: 'Segoe UI', sans-serif; background: #f0f2f5; margin: 0; padding: 20px; display: flex; justify-content: center; }
+        .container { background: white; padding: 2rem; border-radius: 12px; box-shadow: 0 4px 20px rgba(0,0,0,0.1); width: 100%; max-width: 600px; }
+        h1, h2 { text-align: center; color: #333; }
+        input, select, button { width: 100%; padding: 12px; margin: 8px 0; border-radius: 6px; box-sizing: border-box; }
+        input, select { border: 1px solid #ddd; }
+        button { cursor: pointer; font-weight: bold; border: none; }
+        .btn-primary { background-color: #007bff; color: white; }
+        .btn-success { background-color: #28a745; color: white; }
+        .btn-danger { background-color: #dc3545; color: white; }
+        .hidden { display: none; }
+
+        /* 历史记录样式 */
+        .history-item { border-bottom: 1px solid #eee; padding: 10px 0; font-size: 14px; }
+        .history-meta { color: #888; font-size: 12px; display: flex; justify-content: space-between; }
+        .history-source { font-weight: bold; color: #333; margin-top: 4px; }
+        .history-target { color: #0056b3; margin-top: 2px; }
+        .admin-badge { background: #ffc107; padding: 2px 6px; border-radius: 4px; font-size: 10px; color: #333; }
+    </style>
+</head>
+<body>
+
+<div class="container">
+
+    <div id="authSection">
+        <h1 id="authTitle">用户登录</h1>
+        <input type="text" id="username" placeholder="用户名">
+        <input type="password" id="password" placeholder="密码">
+        <button class="btn-primary" onclick="handleLogin()">登录</button>
+        <button class="btn-success" onclick="handleRegister()">注册新账号</button>
+        <p id="authMsg" style="color: red; text-align: center;"></p>
+    </div>
+
+    <div id="mainSection" class="hidden">
+        <div style="display: flex; justify-content: space-between; align-items: center;">
+            <h2 id="welcomeMsg">欢迎</h2>
+            <button onclick="handleLogout()" style="width: auto; padding: 5px 15px;" class="btn-danger">退出</button>
+        </div>
+
+        <hr>
+
+        <label>目标语言：</label>
+        <select id="langSelect">
+            <option value="eng_Latn" data-tts="en-US">🇺🇸 英语</option>
+            <option value="jpn_Jpan" data-tts="ja-JP">🇯🇵 日语</option>
+            <option value="kor_Hang" data-tts="ko-KR">🇰🇷 韩语</option>
+            <option value="zho_Hans" data-tts="zh-CN">🇨🇳 中文</option>
+        </select>
+
+        <div style="display: flex; gap: 10px;">
+            <button id="startBtn" class="btn-success">🎙️ 开始说话</button>
+            <button id="stopBtn" class="btn-danger" disabled>⏹️ 停止</button>
+        </div>
+        <div id="status" style="text-align: center; margin: 10px; color: #666;">准备就绪</div>
+
+        <div style="background: #f8f9fa; padding: 15px; border-radius: 8px; margin-top: 10px;">
+            <div id="liveResult">请开始录音...</div>
+        </div>
+
+        <hr>
+
+        <div style="display: flex; justify-content: space-between; align-items: center; margin-top: 20px;">
+        <h3 style="margin: 0;">📜 历史记录</h3>
+        <div>
+            <button onclick="loadHistory()" style="width:auto; font-size:12px; padding:5px 10px; background:#6c757d; color:white;">🔄 刷新</button>
+            <button onclick="exportExcel()" style="width:auto; font-size:12px; padding:5px 10px; background:#28a745; color:white;">📥 导出Excel</button>
+        </div>
+    </div>
+    <div id="historyList" style="max-height: 300px; overflow-y: auto; margin-top: 10px;">
+        </div>
+    </div>
+
+</div>
+
+<script>
+    const API_URL = 'http://127.0.0.1:5000';
+    // 必须要带这个，才能让浏览器保存 cookie
+    const fetchConfig = { headers: { 'Content-Type': 'application/json' }, credentials: 'include' };
+
+    // --- 认证逻辑 ---
+    async function handleLogin() {
+        const u = document.getElementById('username').value;
+        const p = document.getElementById('password').value;
+        if(!u || !p) return alert("请输入账号密码");
+
+        const res = await fetch(`${API_URL}/login`, {
+            method: 'POST', body: JSON.stringify({username: u, password: p}), ...fetchConfig
+        });
+        const data = await res.json();
+
+        if (res.ok) {
+            showMainUI(u, data.is_admin);
+        } else {
+            document.getElementById('authMsg').textContent = data.error;
+        }
+    }
+
+    async function handleRegister() {
+        const u = document.getElementById('username').value;
+        const p = document.getElementById('password').value;
+        const res = await fetch(`${API_URL}/register`, {
+            method: 'POST', body: JSON.stringify({username: u, password: p}), ...fetchConfig
+        });
+        const data = await res.json();
+        alert(data.message || data.error);
+    }
+
+    async function handleLogout() {
+        await fetch(`${API_URL}/logout`, { method: 'POST', ...fetchConfig });
+        location.reload();
+    }
+
+    function showMainUI(username, isAdmin) {
+        document.getElementById('authSection').classList.add('hidden');
+        document.getElementById('mainSection').classList.remove('hidden');
+        document.getElementById('welcomeMsg').innerHTML = `欢迎, ${username} ${isAdmin ? '<span class="admin-badge">管理员</span>' : ''}`;
+        loadHistory(); // 登录后立即加载历史
+    }
+
+    // --- 历史记录逻辑 ---
+    async function loadHistory() {
+        const res = await fetch(`${API_URL}/get_history`, { method: 'GET', credentials: 'include' });
+        if(res.ok) {
+            const list = await res.json();
+            const container = document.getElementById('historyList');
+            container.innerHTML = "";
+            list.forEach(item => {
+                const div = document.createElement('div');
+                div.className = 'history-item';
+                div.innerHTML = `
+                    <div class="history-meta">
+                        <span>👤 ${item.user} | ${item.lang}</span>
+                        <span>${item.time}</span>
+                    </div>
+                    <div class="history-source">${item.source}</div>
+                    <div class="history-target">➡ ${item.target}</div>
+                `;
+                container.appendChild(div);
+            });
+        }
+    }
+
+    // --- 录音逻辑 (保持原有核心功能) ---
+    let mediaRecorder, audioChunks = [];
+    const startBtn = document.getElementById('startBtn');
+    const stopBtn = document.getElementById('stopBtn');
+    const statusDiv = document.getElementById('status');
+
+    startBtn.onclick = async () => {
+        const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+        mediaRecorder = new MediaRecorder(stream);
+        audioChunks = [];
+        mediaRecorder.ondataavailable = e => audioChunks.push(e.data);
+        mediaRecorder.onstop = sendAudio;
+        mediaRecorder.start();
+        startBtn.disabled = true; stopBtn.disabled = false;
+        statusDiv.textContent = "🎙️ 正在录音...";
+    };
+
+    stopBtn.onclick = () => { mediaRecorder.stop(); startBtn.disabled = false; stopBtn.disabled = true; };
+
+    async function sendAudio() {
+        statusDiv.textContent = "⏳ 正在识别与保存...";
+        const blob = new Blob(audioChunks, { type: 'audio/webm' });
+        const fd = new FormData();
+        fd.append('audio', blob);
+
+        const select = document.getElementById('langSelect');
+        fd.append('target_lang', select.value);
+
+        try {
+            // 注意：这里也需要 credentials: 'include' 才能带上登录状态
+            const res = await fetch(`${API_URL}/process_audio`, { method: 'POST', body: fd, credentials: 'include' });
+            const data = await res.json();
+
+            if (data.error) {
+                statusDiv.textContent = "❌ " + data.error;
+            } else {
+                statusDiv.textContent = `✅ 完成!`;
+                // 显示结果
+                let displayHtml = data.source_text;
+                if (data.zh_supplement) displayHtml += `<br><small style="color:#666">(${data.zh_supplement})</small>`;
+                displayHtml += `<br><b style="color:#0056b3; font-size:1.2em">${data.target_translated_text}</b>`;
+                document.getElementById('liveResult').innerHTML = displayHtml;
+
+                // 朗读
+                speak(data.target_translated_text, select.options[select.selectedIndex].dataset.tts);
+
+                // 自动刷新历史记录
+                loadHistory();
+            }
+        } catch (e) { console.error(e); }
+    }
+
+    function speak(text, lang) {
+        window.speechSynthesis.cancel();
+        const u = new SpeechSynthesisUtterance(text);
+        u.lang = lang;
+        window.speechSynthesis.speak(u);
+    }
+    async function exportExcel() {
+    // 给个简单的提示
+    const btn = event.target;
+    const originalText = btn.textContent;
+    btn.textContent = "⏳ 正在生成...";
+    btn.disabled = true;
+
+    try {
+        // 请求后端接口
+        const response = await fetch(`${API_URL}/export_history`, {
+            method: 'GET',
+            credentials: 'include'
+        });
+
+        if (response.ok) {
+            // 1. 获取 blob (二进制大对象)
+            const blob = await response.blob();
+
+            // 2. 创建一个临时的下载链接
+            const url = window.URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+
+            // 3. 尝试从响应头获取文件名，如果没有就用默认的
+            // (为了简化，这里直接用当前时间生成文件名)
+            const date = new Date().toISOString().slice(0,10).replace(/-/g,"");
+            a.download = `语音记录_${date}.xlsx`;
+
+            // 4. 触发下载并清理
+            document.body.appendChild(a);
+            a.click();
+            a.remove();
+            window.URL.revokeObjectURL(url);
+        } else {
+            const err = await response.json();
+            alert("导出失败: " + (err.error || "未知错误"));
+        }
+    } catch (error) {
+        console.error(error);
+        alert("下载出错");
+    } finally {
+        // 恢复按钮状态
+        btn.textContent = originalText;
+        btn.disabled = false;
+    }
+}
+</script>
+
+</body>
+</html>

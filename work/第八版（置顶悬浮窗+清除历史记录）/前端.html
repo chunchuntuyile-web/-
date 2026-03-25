@@ -1,0 +1,624 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <script src="https://cdn.jsdelivr.net/npm/echarts@5.5.0/dist/echarts.min.js"></script>
+    <title>智能语音系统 - 登录</title>
+    <style>
+        body { font-family: 'Segoe UI', sans-serif; background: #f0f2f5; margin: 0; padding: 20px; display: flex; justify-content: center; }
+        .container { background: white; padding: 2rem; border-radius: 12px; box-shadow: 0 4px 20px rgba(0,0,0,0.1); width: 100%; max-width: 600px; }
+        h1, h2 { text-align: center; color: #333; }
+        input, select, button { width: 100%; padding: 12px; margin: 8px 0; border-radius: 6px; box-sizing: border-box; }
+        input, select { border: 1px solid #ddd; }
+        button { cursor: pointer; font-weight: bold; border: none; }
+        .btn-primary { background-color: #007bff; color: white; }
+        .btn-success { background-color: #28a745; color: white; }
+        .btn-danger { background-color: #dc3545; color: white; }
+        .hidden { display: none; }
+
+        /* 历史记录样式 */
+        .history-item { border-bottom: 1px solid #eee; padding: 10px 0; font-size: 14px; }
+        .history-meta { color: #888; font-size: 12px; display: flex; justify-content: space-between; }
+        .history-source { font-weight: bold; color: #333; margin-top: 4px; }
+        .history-target { color: #0056b3; margin-top: 2px; }
+        .admin-badge { background: #ffc107; padding: 2px 6px; border-radius: 4px; font-size: 10px; color: #333; }
+
+        /* 优化后的悬浮窗：带历史记录 */
+        #floatingSubtitle {
+            position: fixed;
+            bottom: 20px;
+            left: 50%;
+            transform: translateX(-50%);
+            width: 80%;
+            max-width: 650px;
+            background: rgba(0, 0, 0, 0.85);
+            padding: 15px 20px;
+            border-radius: 12px;
+            box-shadow: 0 8px 32px rgba(0, 0, 0, 0.5);
+            backdrop-filter: blur(10px);
+            z-index: 9999;
+            cursor: move;
+            display: none;
+            user-select: none;
+            border: 1px solid rgba(255,255,255,0.1);
+        }
+
+        .close-float { position: absolute; top: 10px; right: 15px; cursor: pointer; color: #aaa; font-size: 20px; }
+        .close-float:hover { color: #fff; }
+
+        /* 历史记录滚动区 */
+        #floatHistory {
+            max-height: 120px;
+            overflow-y: auto;
+            border-bottom: 1px dashed rgba(255,255,255,0.2);
+            margin-bottom: 10px;
+            padding-bottom: 10px;
+            font-size: 13px;
+            line-height: 1.5;
+        }
+        .history-line { margin-bottom: 6px; }
+        .hist-src { color: #aaa; }
+        .hist-tgt { color: #e0e0e0; margin-left: 8px; }
+
+        /* 当前最新字幕 */
+        .float-source { font-size: 14px; color: #00d2ff; margin-bottom: 5px; }
+        .float-target { font-size: 22px; font-weight: bold; color: #ffeb3b; text-shadow: 1px 1px 2px black; }
+    </style>
+</head>
+<body>
+
+<div class="container">
+
+    <div id="authSection">
+        <h1 id="authTitle">👤 用户登录</h1>
+
+        <div style="text-align: right; margin-bottom: 15px;">
+            <span id="switchLoginBtn" style="color: #007bff; cursor: pointer; font-size: 14px; text-decoration: underline;" onclick="toggleLoginType()">
+                🛡️ 切换到管理员登录
+            </span>
+        </div>
+
+        <input type="text" id="username" placeholder="用户名">
+        <input type="password" id="password" placeholder="密码">
+
+        <button id="loginBtn" class="btn-primary" onclick="handleLogin()">登录</button>
+        <button id="registerBtn" class="btn-success" onclick="handleRegister()">注册新账号</button>
+
+        <p id="authMsg" style="color: red; text-align: center; margin-top: 15px; font-weight: bold;"></p>
+    </div>
+
+    <div id="mainSection" class="hidden">
+        <div style="display: flex; justify-content: space-between; align-items: center;">
+            <h2 id="welcomeMsg">欢迎</h2>
+            <button onclick="handleLogout()" style="width: auto; padding: 5px 15px;" class="btn-danger">退出</button>
+        </div>
+
+        <hr>
+
+        <label>目标语言：</label>
+        <select id="langSelect">
+            <option value="eng_Latn" data-tts="en-US">🇺🇸 英语</option>
+            <option value="jpn_Jpan" data-tts="ja-JP">🇯🇵 日语</option>
+            <option value="kor_Hang" data-tts="ko-KR">🇰🇷 韩语</option>
+            <option value="zho_Hans" data-tts="zh-CN">🇨🇳 中文</option>
+        </select>
+
+        <div style="display: flex; gap: 10px; flex-wrap: wrap;">
+            <button id="startBtn" class="btn-success">🎙️ 麦克风输入</button>
+            <button id="startSystemAudioBtn" class="btn-primary" style="background-color: #6f42c1;">💻 开启独立置顶字幕</button>
+            <button id="stopBtn" class="btn-danger" disabled>⏹️ 停止</button>
+        </div>
+        <div id="status" style="text-align: center; margin: 10px; color: #666;">准备就绪</div>
+
+        <div style="background: #f8f9fa; padding: 15px; border-radius: 8px; margin-top: 10px;">
+            <div id="liveResult">请开始录音...</div>
+        </div>
+        <div id="adminDashboard" class="hidden" style="background: white; padding: 20px; border-radius: 8px; box-shadow: 0 2px 10px rgba(0,0,0,0.05); margin-bottom: 20px;">
+            <h3 style="margin-top: 0; color: #333;">📊 系统运行大盘</h3>
+
+            <div style="display: flex; gap: 20px; margin-bottom: 20px;">
+                <div style="flex: 1; background: #e9ecef; padding: 15px; border-radius: 8px; text-align: center;">
+                    <div style="color: #666; font-size: 14px;">总注册用户数</div>
+                    <div id="statUsers" style="font-size: 24px; font-weight: bold; color: #007bff;">0</div>
+                </div>
+                <div style="flex: 1; background: #e9ecef; padding: 15px; border-radius: 8px; text-align: center;">
+                    <div style="color: #666; font-size: 14px;">累计翻译次数</div>
+                    <div id="statTrans" style="font-size: 24px; font-weight: bold; color: #28a745;">0</div>
+                </div>
+            </div>
+
+            <div style="display: flex; gap: 20px; height: 300px;">
+                <div id="pieChart" style="flex: 1; background: #f8f9fa; border-radius: 8px;"></div>
+                <div id="lineChart" style="flex: 2; background: #f8f9fa; border-radius: 8px;"></div>
+            </div>
+        </div>
+        <hr>
+
+        <div style="display: flex; justify-content: space-between; align-items: center; margin-top: 20px;">
+            <h3 style="margin: 0;">📜 历史记录</h3>
+            <div style="display: flex; gap: 8px;">
+                <button onclick="loadHistory()" style="width:auto; font-size:12px; padding:5px 10px; background:#6c757d; color:white; border-radius: 4px;">🔄 刷新</button>
+                <button onclick="exportExcel()" style="width:auto; font-size:12px; padding:5px 10px; background:#28a745; color:white; border-radius: 4px;">📥 导出</button>
+                <button onclick="clearHistory()" style="width:auto; font-size:12px; padding:5px 10px; background:#dc3545; color:white; border-radius: 4px;">🗑️ 清空</button>
+            </div>
+        </div>
+        <div id="historyList" style="max-height: 300px; overflow-y: auto; margin-top: 10px;">
+            </div>
+    <div id="historyList" style="max-height: 300px; overflow-y: auto; margin-top: 10px;">
+        </div>
+    </div>
+
+</div>
+<div id="floatingSubtitle">
+    <div class="close-float" onclick="closeFloatingWindow()">×</div>
+    <div id="floatHistory"></div>
+    <div class="float-source" id="floatSrc">等待系统音频输入...</div>
+    <div class="float-target" id="floatTgt">...</div>
+</div>
+<script>
+    const API_URL = 'http://127.0.0.1:5000';
+    // 必须要带这个，才能让浏览器保存 cookie
+    const fetchConfig = { headers: { 'Content-Type': 'application/json' }, credentials: 'include' };
+
+    // --- 认证逻辑 ---
+    // --- 新增：入口状态管理 ---
+    let currentLoginType = 'user'; // 默认为普通用户入口
+
+    function toggleLoginType() {
+        const title = document.getElementById('authTitle');
+        const switchBtn = document.getElementById('switchLoginBtn');
+        const regBtn = document.getElementById('registerBtn');
+        const loginBtn = document.getElementById('loginBtn');
+        const authMsg = document.getElementById('authMsg');
+
+        authMsg.textContent = ''; // 切换时清空报错信息
+
+        if (currentLoginType === 'user') {
+            // 切换为管理员模式
+            currentLoginType = 'admin';
+            title.innerHTML = '🛡️ 管理员登录';
+            title.style.color = '#dc3545'; // 标题变红提示特权
+            loginBtn.style.backgroundColor = '#dc3545'; // 登录按钮变红
+            switchBtn.innerHTML = '👤 切换到普通用户登录';
+            regBtn.style.display = 'none'; // 隐藏注册按钮
+        } else {
+            // 切换回用户模式
+            currentLoginType = 'user';
+            title.innerHTML = '👤 用户登录';
+            title.style.color = '#333';
+            loginBtn.style.backgroundColor = '#007bff'; // 恢复蓝色
+            switchBtn.innerHTML = '🛡️ 切换到管理员登录';
+            regBtn.style.display = 'block'; // 显示注册按钮
+        }
+    }
+
+    // --- 修改：登录逻辑 ---
+    async function handleLogin() {
+        const u = document.getElementById('username').value;
+        const p = document.getElementById('password').value;
+        if(!u || !p) return alert("请输入账号密码");
+
+        // 关键改动：将 currentLoginType 一并发送给后端
+        const payload = { username: u, password: p, login_type: currentLoginType };
+
+        const res = await fetch(`${API_URL}/login`, {
+            method: 'POST',
+            body: JSON.stringify(payload),
+            ...fetchConfig
+        });
+        const data = await res.json();
+
+        if (res.ok) {
+            showMainUI(u, data.is_admin);
+        } else {
+            // 显示后端的拦截报错
+            document.getElementById('authMsg').textContent = data.error;
+        }
+    }
+
+    // --- 注册逻辑保持不变 ---
+    async function handleRegister() {
+        const u = document.getElementById('username').value;
+        const p = document.getElementById('password').value;
+        const res = await fetch(`${API_URL}/register`, {
+            method: 'POST', body: JSON.stringify({username: u, password: p}), ...fetchConfig
+        });
+        const data = await res.json();
+        alert(data.message || data.error);
+    }
+
+    async function handleRegister() {
+        const u = document.getElementById('username').value;
+        const p = document.getElementById('password').value;
+        const res = await fetch(`${API_URL}/register`, {
+            method: 'POST', body: JSON.stringify({username: u, password: p}), ...fetchConfig
+        });
+        const data = await res.json();
+        alert(data.message || data.error);
+    }
+
+    async function handleLogout() {
+        await fetch(`${API_URL}/logout`, { method: 'POST', ...fetchConfig });
+        location.reload();
+    }
+
+    // 修改原有的 showMainUI 函数
+    function showMainUI(username, isAdmin) {
+        document.getElementById('authSection').classList.add('hidden');
+        document.getElementById('mainSection').classList.remove('hidden');
+        document.getElementById('welcomeMsg').innerHTML = `欢迎, ${username} ${isAdmin ? '<span class="admin-badge">管理员</span>' : ''}`;
+
+        loadHistory();
+
+        // 如果是管理员，显示大盘并加载数据
+        if (isAdmin) {
+            document.getElementById('adminDashboard').classList.remove('hidden');
+            loadDashboard();
+        } else {
+            document.getElementById('adminDashboard').classList.add('hidden');
+        }
+    }
+
+    // 新增：加载大盘数据的函数
+    async function loadDashboard() {
+        try {
+            const res = await fetch(`${API_URL}/api/dashboard`, { method: 'GET', credentials: 'include' });
+            if (res.ok) {
+                const data = await res.json();
+
+                // 1. 更新顶部数字
+                document.getElementById('statUsers').textContent = data.total_users;
+                document.getElementById('statTrans').textContent = data.total_translations;
+
+                // 2. 渲染饼图 (目标语言分布)
+                const pieChart = echarts.init(document.getElementById('pieChart'));
+                pieChart.setOption({
+                    title: { text: '翻译语言偏好', left: 'center', top: 10, textStyle: {fontSize: 14} },
+                    tooltip: { trigger: 'item' },
+                    series: [{
+                        type: 'pie',
+                        radius: '60%',
+                        data: data.pie_data,
+                        emphasis: { itemStyle: { shadowBlur: 10, shadowOffsetX: 0, shadowColor: 'rgba(0, 0, 0, 0.5)' } }
+                    }]
+                });
+
+                // 3. 渲染折线图 (每日调用趋势)
+                const lineChart = echarts.init(document.getElementById('lineChart'));
+                lineChart.setOption({
+                    title: { text: '每日翻译请求趋势', left: 'center', top: 10, textStyle: {fontSize: 14} },
+                    tooltip: { trigger: 'axis' },
+                    xAxis: { type: 'category', data: data.line_dates },
+                    yAxis: { type: 'value' },
+                    series: [{
+                        data: data.line_data,
+                        type: 'line',
+                        smooth: true, // 让线条变圆滑
+                        areaStyle: { opacity: 0.3 }, // 下方填充半透明颜色
+                        itemStyle: { color: '#007bff' }
+                    }]
+                });
+
+                // 让图表随窗口大小自动响应
+                window.addEventListener('resize', function() {
+                    pieChart.resize();
+                    lineChart.resize();
+                });
+            }
+        } catch (error) {
+            console.error("加载大盘数据失败", error);
+        }
+    }
+
+    // --- 历史记录逻辑 ---
+    async function loadHistory() {
+        const res = await fetch(`${API_URL}/get_history`, { method: 'GET', credentials: 'include' });
+        if(res.ok) {
+            const list = await res.json();
+            const container = document.getElementById('historyList');
+            container.innerHTML = "";
+            list.forEach(item => {
+                const div = document.createElement('div');
+                div.className = 'history-item';
+                div.innerHTML = `
+                    <div class="history-meta">
+                        <span>👤 ${item.user} | ${item.lang}</span>
+                        <span>${item.time}</span>
+                    </div>
+                    <div class="history-source">${item.source}</div>
+                    <div class="history-target">➡ ${item.target}</div>
+                `;
+                container.appendChild(div);
+            });
+        }
+    }
+
+    // --- 录音逻辑 (保持原有核心功能) ---
+    let mediaRecorder, audioChunks = [];
+    const startBtn = document.getElementById('startBtn');
+    const stopBtn = document.getElementById('stopBtn');
+    const statusDiv = document.getElementById('status');
+
+    startBtn.onclick = async () => {
+        const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+        mediaRecorder = new MediaRecorder(stream);
+        audioChunks = [];
+        mediaRecorder.ondataavailable = e => audioChunks.push(e.data);
+        mediaRecorder.onstop = sendAudio;
+        mediaRecorder.start();
+        startBtn.disabled = true; stopBtn.disabled = false;
+        statusDiv.textContent = "🎙️ 正在录音...";
+    };
+
+    stopBtn.onclick = () => { mediaRecorder.stop(); startBtn.disabled = false; stopBtn.disabled = true; };
+
+    async function sendAudio() {
+        statusDiv.textContent = "⏳ 正在识别与保存...";
+        const blob = new Blob(audioChunks, { type: 'audio/webm' });
+        const fd = new FormData();
+        fd.append('audio', blob);
+
+        const select = document.getElementById('langSelect');
+        fd.append('target_lang', select.value);
+
+        try {
+            // 注意：这里也需要 credentials: 'include' 才能带上登录状态
+            const res = await fetch(`${API_URL}/process_audio`, { method: 'POST', body: fd, credentials: 'include' });
+            const data = await res.json();
+
+            if (data.error) {
+                statusDiv.textContent = "❌ " + data.error;
+            } else {
+                statusDiv.textContent = `✅ 完成!`;
+                // 显示结果
+                let displayHtml = data.source_text;
+                if (data.zh_supplement) displayHtml += `<br><small style="color:#666">(${data.zh_supplement})</small>`;
+                displayHtml += `<br><b style="color:#0056b3; font-size:1.2em">${data.target_translated_text}</b>`;
+                document.getElementById('liveResult').innerHTML = displayHtml;
+
+                // 朗读
+                speak(data.target_translated_text, select.options[select.selectedIndex].dataset.tts);
+
+                // 自动刷新历史记录
+                loadHistory();
+            }
+        } catch (e) { console.error(e); }
+    }
+
+    function speak(text, lang) {
+        window.speechSynthesis.cancel();
+        const u = new SpeechSynthesisUtterance(text);
+        u.lang = lang;
+        window.speechSynthesis.speak(u);
+    }
+    async function exportExcel() {
+    // 给个简单的提示
+    const btn = event.target;
+    const originalText = btn.textContent;
+    btn.textContent = "⏳ 正在生成...";
+    btn.disabled = true;
+
+    try {
+        // 请求后端接口
+        const response = await fetch(`${API_URL}/export_history`, {
+            method: 'GET',
+            credentials: 'include'
+        });
+
+        if (response.ok) {
+            // 1. 获取 blob (二进制大对象)
+            const blob = await response.blob();
+
+            // 2. 创建一个临时的下载链接
+            const url = window.URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+
+            // 3. 尝试从响应头获取文件名，如果没有就用默认的
+            // (为了简化，这里直接用当前时间生成文件名)
+            const date = new Date().toISOString().slice(0,10).replace(/-/g,"");
+            a.download = `语音记录_${date}.xlsx`;
+
+            // 4. 触发下载并清理
+            document.body.appendChild(a);
+            a.click();
+            a.remove();
+            window.URL.revokeObjectURL(url);
+        } else {
+            const err = await response.json();
+            alert("导出失败: " + (err.error || "未知错误"));
+        }
+    } catch (error) {
+        console.error(error);
+        alert("下载出错");
+    } finally {
+        // 恢复按钮状态
+        btn.textContent = originalText;
+        btn.disabled = false;
+    }
+
+}
+    // --- 新增：清空历史记录逻辑 ---
+    async function clearHistory() {
+        // 增加防误触的弹窗确认
+        if (!confirm("⚠️ 确定要清空历史记录吗？此操作不可恢复！")) {
+            return;
+        }
+
+        try {
+            const res = await fetch(`${API_URL}/clear_history`, {
+                method: 'POST',
+                credentials: 'include'
+            });
+            const data = await res.json();
+
+            if (res.ok) {
+                // 清空成功后，立刻重新加载历史列表（此时应该为空）
+                loadHistory();
+
+                // 如果当前是管理员，且大盘正在显示，顺便刷新一下大盘的数据归零
+                const dashboard = document.getElementById('adminDashboard');
+                if (dashboard && !dashboard.classList.contains('hidden')) {
+                    loadDashboard();
+                }
+
+                alert("✅ " + data.message);
+            } else {
+                alert("❌ 清空失败: " + data.error);
+            }
+        } catch (error) {
+            console.error("清空请求出错:", error);
+            alert("网络请求出错，请检查后端是否正常运行。");
+        }
+    }
+    // ==========================================================
+    // ================= 新增：系统音频捕获 & 全局置顶画中画 =================
+    // ==========================================================
+
+    const startSystemBtn = document.getElementById('startSystemAudioBtn');
+    let sysRecorder;
+    let captureInterval;
+    let pipWindow = null; // 存放全局置顶窗口的变量
+
+    if (startSystemBtn) {
+        startSystemBtn.onclick = async () => {
+            // 1. 检查浏览器是否支持这个黑科技
+            if (!('documentPictureInPicture' in window)) {
+                alert("⚠️ 你的浏览器太老了，不支持全局置顶窗口。请使用最新版 Chrome 或 Edge 浏览器！");
+                return;
+            }
+
+            try {
+                // 2. 获取屏幕和音频流
+                const stream = await navigator.mediaDevices.getDisplayMedia({
+                    video: true,
+                    audio: { echoCancellation: false, noiseSuppression: false, autoGainControl: false }
+                });
+
+                const audioTracks = stream.getAudioTracks();
+                if (audioTracks.length === 0) {
+                    alert("⚠️ 捕获失败：请重新勾选【共享系统音频】！");
+                    stream.getTracks().forEach(track => track.stop());
+                    return;
+                }
+
+                // 3. 打开全局置顶的独立窗口 (PiP)
+                pipWindow = await documentPictureInPicture.requestWindow({
+                    width: 600,
+                    height: 250,
+                });
+
+                // 为这个独立窗口写入 CSS 样式 (纯黑半透明风格)
+                const style = pipWindow.document.createElement('style');
+                style.textContent = `
+                    body { background-color: #1a1a1a; color: white; margin: 0; padding: 15px; font-family: 'Segoe UI', sans-serif; display: flex; flex-direction: column; height: 100vh; box-sizing: border-box; overflow: hidden; }
+                    #pipHistory { flex: 1; overflow-y: auto; font-size: 14px; border-bottom: 1px dashed #555; margin-bottom: 10px; padding-bottom: 10px; line-height: 1.6; }
+                    .hist-src { color: #aaa; }
+                    .hist-tgt { color: #e0e0e0; margin-left: 8px; }
+                    #pipSrc { font-size: 14px; color: #00d2ff; margin-bottom: 5px; }
+                    #pipTgt { font-size: 24px; font-weight: bold; color: #ffeb3b; text-shadow: 1px 1px 2px black; }
+                    /* 自定义滚动条 */
+                    ::-webkit-scrollbar { width: 6px; }
+                    ::-webkit-scrollbar-thumb { background: #555; border-radius: 3px; }
+                `;
+                pipWindow.document.head.appendChild(style);
+
+                // 为独立窗口写入 HTML 结构
+                pipWindow.document.body.innerHTML = `
+                    <div id="pipHistory"></div>
+                    <div id="pipSrc">等待系统音频输入...</div>
+                    <div id="pipTgt">正在监听...</div>
+                `;
+
+                // 4. 音频录制与请求后端逻辑
+                const audioStream = new MediaStream([audioTracks[0]]);
+                sysRecorder = new MediaRecorder(audioStream, { mimeType: 'audio/webm' });
+
+                sysRecorder.ondataavailable = async (e) => {
+                    if (e.data.size > 0 && pipWindow) { // 确保窗口没被关掉
+                        const blob = new Blob([e.data], { type: 'audio/webm' });
+                        const fd = new FormData();
+                        fd.append('audio', blob);
+                        const select = document.getElementById('langSelect');
+                        fd.append('target_lang', select.value);
+
+                        try {
+                            const res = await fetch(`${API_URL}/process_audio`, { method: 'POST', body: fd, credentials: 'include' });
+                            const data = await res.json();
+
+                            if (!data.error && data.source_text && data.source_text.trim() !== "") {
+                                // 获取置顶窗口里的元素
+                                const pipHistObj = pipWindow.document.getElementById('pipHistory');
+                                const pipSrcObj = pipWindow.document.getElementById('pipSrc');
+                                const pipTgtObj = pipWindow.document.getElementById('pipTgt');
+
+                                const currentSrc = pipSrcObj.textContent;
+                                const currentTgt = pipTgtObj.textContent;
+
+                                // 历史记录追加
+                                if (currentSrc !== "等待系统音频输入..." && currentSrc !== "") {
+                                    pipHistObj.innerHTML += `
+                                        <div style="margin-bottom: 6px;">
+                                            <span class="hist-src">${currentSrc}</span>
+                                            <span class="hist-tgt">${currentTgt}</span>
+                                        </div>`;
+                                    pipHistObj.scrollTop = pipHistObj.scrollHeight;
+                                }
+
+                                // 最新字幕高亮
+                                pipSrcObj.textContent = data.source_text;
+                                pipTgtObj.textContent = data.target_translated_text;
+                            }
+                        } catch(err) { console.error("翻译请求出错", err); }
+                    }
+                };
+
+                sysRecorder.start();
+
+                captureInterval = setInterval(() => {
+                    if (sysRecorder && sysRecorder.state === 'recording') {
+                        sysRecorder.stop();
+                        sysRecorder.start();
+                    }
+                }, 2000);
+
+                // 5. 状态更新
+                startBtn.disabled = true;
+                startSystemBtn.disabled = true;
+                stopBtn.disabled = false;
+                statusDiv.textContent = "💻 全局置顶字幕已开启！(可将浏览器最小化)";
+
+                // 6. 停止与清理逻辑
+                const stopCapture = () => {
+                    clearInterval(captureInterval);
+                    if (sysRecorder && sysRecorder.state !== 'inactive') sysRecorder.stop();
+                    stream.getTracks().forEach(track => track.stop());
+
+                    if (pipWindow) {
+                        pipWindow.close(); // 自动关闭置顶窗口
+                        pipWindow = null;
+                    }
+
+                    startSystemBtn.disabled = false;
+                    startBtn.disabled = false;
+                    stopBtn.disabled = true;
+                    statusDiv.textContent = "准备就绪";
+                };
+
+                // 如果用户手动关掉了那个置顶小窗口，也要停止录音
+                pipWindow.addEventListener("pagehide", stopCapture);
+                stream.getVideoTracks()[0].onended = stopCapture;
+                stopBtn.onclick = stopCapture;
+
+            } catch (err) {
+                console.error(err);
+                alert("无法开启置顶窗口，请检查是否赋予了相关权限。");
+            }
+        };
+    }
+</script>
+</script>
+
+</body>
+</html>

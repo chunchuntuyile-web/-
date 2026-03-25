@@ -1,0 +1,187 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>智能多语种语音交互</title>
+    <style>
+        body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; display: flex; flex-direction: column; align-items: center; justify-content: center; height: 100vh; background-color: #f0f2f5; margin: 0; }
+        .container { background: white; padding: 2rem; border-radius: 12px; box-shadow: 0 4px 20px rgba(0,0,0,0.1); text-align: center; width: 90%; max-width: 500px; }
+        h1 { color: #333; margin-bottom: 2rem; }
+
+        .btn-group { display: flex; gap: 1rem; justify-content: center; margin-bottom: 2rem; }
+        button { padding: 15px 30px; border: none; border-radius: 50px; font-size: 16px; cursor: pointer; transition: all 0.3s ease; font-weight: bold; }
+        #startBtn { background-color: #28a745; color: white; }
+        #startBtn:disabled { background-color: #95d3a3; cursor: not-allowed; }
+        #stopBtn { background-color: #dc3545; color: white; }
+        #stopBtn:disabled { background-color: #e6b6ba; cursor: not-allowed; }
+
+        .status { margin-bottom: 1rem; font-style: italic; color: #666; height: 24px; }
+
+        .result-box { text-align: left; background: #f8f9fa; padding: 15px; border-radius: 8px; margin-top: 10px; border-left: 5px solid #007bff; }
+        .result-label { font-size: 12px; color: #888; text-transform: uppercase; letter-spacing: 1px; margin-bottom: 5px;}
+
+        /* 识别源文本样式 */
+        .source-text { font-size: 18px; color: #333; font-weight: 500; }
+        /* 辅助中文翻译样式 */
+        .zh-subtext { font-size: 14px; color: #666; margin-top: 4px; padding-top: 4px; border-top: 1px dashed #ddd; }
+
+        /* 最终翻译结果样式 */
+        .target-text { font-size: 20px; font-weight: bold; color: #0056b3; margin-top: 5px; }
+
+        .recording-indicator { display: none; width: 10px; height: 10px; background-color: red; border-radius: 50%; animation: pulse 1s infinite; margin: 0 auto 10px; }
+        @keyframes pulse { 0% { box-shadow: 0 0 0 0 rgba(255, 0, 0, 0.7); } 70% { box-shadow: 0 0 0 10px rgba(255, 0, 0, 0); } 100% { box-shadow: 0 0 0 0 rgba(255, 0, 0, 0); } }
+    </style>
+</head>
+<body>
+
+<div class="container">
+    <h1>🎙️ 跨语言语音交互</h1>
+
+    <div class="recording-indicator" id="indicator"></div>
+    <div class="status" id="status">点击“开始识别”准备录音</div>
+
+    <div style="margin-bottom: 20px;">
+        <label for="langSelect">目标语言：</label>
+        <select id="langSelect" style="padding: 10px; border-radius: 5px; border: 1px solid #ddd;">
+            <option value="eng_Latn" data-tts="en-US">🇺🇸 英语</option>
+            <option value="jpn_Jpan" data-tts="ja-JP">🇯🇵 日语</option>
+            <option value="kor_Hang" data-tts="ko-KR">🇰🇷 韩语</option>
+            <option value="fra_Latn" data-tts="fr-FR">🇫🇷 法语</option>
+            <option value="deu_Latn" data-tts="de-DE">🇩🇪 德语</option>
+            <option value="rus_Cyrl" data-tts="ru-RU">🇷🇺 俄语</option>
+            <option value="zho_Hans" data-tts="zh-CN">🇨🇳 中文</option>
+        </select>
+    </div>
+
+    <div class="btn-group">
+        <button id="startBtn">开始识别</button>
+        <button id="stopBtn" disabled>语音输入完成</button>
+    </div>
+
+    <div id="results" style="display: none;">
+        <div class="result-box">
+            <div class="result-label" id="srcLabel">识别结果</div>
+            <div id="sourceDisplay">
+                </div>
+
+            <div style="margin: 15px 0; border-bottom: 1px solid #ddd;"></div>
+
+            <div class="result-label" id="targetLabel">翻译结果</div>
+            <div class="target-text" id="targetResult">...</div>
+        </div>
+    </div>
+</div>
+
+<script>
+    let mediaRecorder;
+    let audioChunks = [];
+
+    const startBtn = document.getElementById('startBtn');
+    const stopBtn = document.getElementById('stopBtn');
+    const statusDiv = document.getElementById('status');
+    const indicator = document.getElementById('indicator');
+    const resultDiv = document.getElementById('results');
+
+    startBtn.onclick = async () => {
+        try {
+            const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+            mediaRecorder = new MediaRecorder(stream);
+            audioChunks = [];
+            mediaRecorder.ondataavailable = event => audioChunks.push(event.data);
+            mediaRecorder.onstop = sendAudioToServer;
+            mediaRecorder.start();
+
+            startBtn.disabled = true;
+            stopBtn.disabled = false;
+            statusDiv.textContent = "正在聆听... (支持自动检测语言)";
+            indicator.style.display = "block";
+            resultDiv.style.display = 'none';
+        } catch (err) {
+            alert("无法访问麦克风: " + err);
+        }
+    };
+
+    stopBtn.onclick = () => {
+        mediaRecorder.stop();
+        startBtn.disabled = false;
+        stopBtn.disabled = true;
+        statusDiv.textContent = "正在识别和翻译... 🚀";
+        indicator.style.display = "none";
+    };
+
+    async function sendAudioToServer() {
+        const audioBlob = new Blob(audioChunks, { type: 'audio/webm' });
+        const formData = new FormData();
+        formData.append('audio', audioBlob);
+
+        const select = document.getElementById('langSelect');
+        const targetLang = select.value;
+        const ttsLang = select.options[select.selectedIndex].getAttribute('data-tts');
+
+        formData.append('target_lang', targetLang);
+
+        try {
+            const response = await fetch('http://127.0.0.1:5000/process_audio', {
+                method: 'POST',
+                body: formData
+            });
+
+            const data = await response.json();
+
+            if (data.error) {
+                statusDiv.textContent = "出错了: " + data.error;
+            } else {
+                statusDiv.textContent = `完成! 耗时: ${data.process_time}`;
+                updateUI(data);
+                speakOut(data.target_translated_text, ttsLang);
+            }
+        } catch (error) {
+            console.error(error);
+            statusDiv.textContent = "连接服务器失败";
+        }
+    }
+
+    function updateUI(data) {
+        const srcLabel = document.getElementById('srcLabel');
+        const sourceDisplay = document.getElementById('sourceDisplay');
+        const targetLabel = document.getElementById('targetLabel');
+        const targetResult = document.getElementById('targetResult');
+
+        // 1. 更新翻译结果标签 (例如 "翻译结果 (日语)")
+        const select = document.getElementById('langSelect');
+        const langName = select.options[select.selectedIndex].text.split(' ').pop();
+        targetLabel.textContent = `翻译结果 (${langName})`;
+        targetResult.textContent = data.target_translated_text;
+
+        // 2. 核心逻辑：判断是否显示中文辅助
+        if (data.zh_supplement) {
+            // 情况A：用户说了外语 (例如韩语)
+            // 显示格式：原文 + 中文翻译
+            srcLabel.textContent = `识别结果 (${data.detected_lang.toUpperCase()})`;
+            sourceDisplay.innerHTML = `
+                <div class="source-text">${data.source_text}</div>
+                <div class="zh-subtext">💡 中文: ${data.zh_supplement}</div>
+            `;
+        } else {
+            // 情况B：用户说了中文
+            // 显示格式：仅显示中文原文
+            srcLabel.textContent = "识别结果 (中文)";
+            sourceDisplay.innerHTML = `<div class="source-text">${data.source_text}</div>`;
+        }
+
+        resultDiv.style.display = 'block';
+    }
+
+    function speakOut(text, langCode) {
+        if ('speechSynthesis' in window) {
+            window.speechSynthesis.cancel();
+            const utterance = new SpeechSynthesisUtterance(text);
+            utterance.lang = langCode;
+            window.speechSynthesis.speak(utterance);
+        }
+    }
+</script>
+
+</body>
+</html>
